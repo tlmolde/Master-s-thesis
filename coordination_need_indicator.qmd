@@ -1,0 +1,372 @@
+---
+title: "coordination_demand_v6"
+format: html
+editor: visual
+---
+
+# Coordination demand
+
+## Creating a subset on the policy level
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/data/")
+load("data_combined.Rda")
+
+data_actors_pol <- data_combined %>% 
+  group_by(target_instrument, country, year) %>% 
+  summarise(
+    n_actors = n_distinct(actor),
+    .groups = "drop")
+
+data_coord_pol <- data_combined %>%
+  group_by(country, target_instrument, year) %>%
+  summarise(
+    total_tasks = sum(cum_count),
+    simpson = 1 - sum((cum_count / sum(cum_count))^2),
+    .groups = "drop")
+
+data_coord_pol <- data_coord_pol %>% 
+  left_join(data_actors_pol, by= c("target_instrument", "country","year"))
+
+```
+
+# Creating a theme
+
+```{r}
+pub_theme <- function(base_size = 11) {
+  theme_minimal(base_size = base_size) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Frame
+    plot.background = element_rect(
+      fill = "white",
+      colour = "black",
+      linewidth = 0.75
+    ),
+    # Panel
+    panel.background = element_rect(fill = "white", 
+                                    colour = NA),
+    # Axes
+    axis.line = element_line(colour = "black", 
+                             linewidth = 0.5),
+    axis.title = element_text(face = "bold",
+                              size = base_size + 1),
+    axis.text = element_text(size = base_size),
+    
+    # LEGEND 
+    legend.position = "top",
+    legend.direction = "horizontal",
+    legend.background = element_rect(
+      fill = "white",
+      colour = "black",
+      linewidth = 0.5
+    ),
+    legend.title = element_text(face = "bold"),
+    legend.key.size = unit(0.75, "lines"),
+    legend.margin = margin(5, 5, 5, 5),
+    # Caption 
+    plot.caption = element_text(
+      hjust = 0,
+      size = base_size - 1,
+      colour = "gray40"
+    ),
+    # Margin
+    plot.margin = margin(10, 10, 10, 10)
+  )
+}
+```
+
+## Descriptive statistics of the variables
+
+### Correlation between number of actors and number of tasks
+
+```{r}
+
+corr_actors_tasks <- ggplot(data_coord_pol, 
+                            aes(x = n_actors, 
+                           y = total_tasks)) +
+  geom_point(position = position_jitter(width = 0.3,
+                                        height = 0.3),
+             color = "#2C5985",  alpha = .2) +
+  labs(
+    x = "Number of actors (A)",
+    y = "Number of tasks (T)",
+    caption = "The figure shows the correlation between the number of actors and the number of tasks in each policy.") +
+  theme_light() +
+  pub_theme()+
+  scale_x_continuous(breaks = seq(0,16,1))
+
+corr_actors_tasks
+
+ggsave("corr_actors_tasks.pdf",
+       width = 6,
+       height = 4)
+```
+
+### Sample distribution n_actors and total_tasks
+
+```{r}
+n_actors <- ggplot(data_coord_pol)+
+    geom_histogram(aes(x=n_actors))+
+    scale_x_continuous(breaks = seq(0,19,1))+
+    theme_bw()+
+  labs(x = "Number of actors (per policy)")
+
+n_actors
+
+ggsave("n_actors.pdf",
+       width = 8,
+       height = 6)
+
+n_tasks <- ggplot(data_coord_pol)+
+  geom_histogram(aes(x=total_tasks))+
+  scale_x_continuous(breaks = seq(0,30,1))+
+  theme_bw()+
+  labs(x = "Number of tasks (per policy)")
+
+n_tasks
+
+ggsave("n_tasks.pdf",
+       width = 8,
+       height = 6)
+```
+
+## Creating the index
+
+### Function with simpson
+
+```{r}
+data_coord_pol2 <- data_coord_pol %>% 
+  group_by(target_instrument, country, year) %>% 
+  mutate(coord_simp = ((log(n_actors)^3)*simpson)/
+           (1+(log(n_actors)^3)*simpson))
+
+names(data_coord_pol2)
+
+table(data_coord_pol2$country)
+
+```
+
+### Function with only log
+
+```{r}
+data_coord_pol2 <- data_coord_pol2 %>% 
+  group_by(target_instrument, country, year) %>% 
+  mutate(coord_log = (log(n_actors)*log(total_tasks))/(1+log(n_actors)*log(total_tasks)))
+
+table(data_coord_pol2$country)
+
+# ggplot(data_coord_pol, aes(x = coord_log))+
+#   geom_histogram()+
+#   coord_cartesian(xlim = c(0, 1))+
+#   theme_light()
+# 
+# ggplot(data_coord_pol, aes(x = n_actors, 
+#                            y = coord_log))+
+#   geom_point()+
+#   theme_light()+
+#   labs(x = "Number of actors",
+#     y = "Coordination need (with logT)")+
+#   scale_x_continuous(breaks = seq(0,16,2))
+```
+
+### Saving the dataset
+
+```{r}
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/data/")
+save(data_coord_pol2, file = "data_coord_pol.Rda")
+```
+
+### Creating scenarios
+
+Simpson:
+
+```{r}
+library(cartography)
+
+scenarios_simp <- expand.grid(
+  n_actors = 1:16,
+  simpson = c(0.3, 0.5, 0.7, 0.9)  
+) %>%
+  mutate(
+    coord_simp = (log(n_actors)^3*simpson)/(1+log(n_actors)^3*simpson),
+    scenario_label = paste("Simpson =", simpson))
+
+scenarios_simpson <- ggplot(scenarios_simp, aes(x = n_actors, 
+                      y = coord_simp, 
+                      color = scenario_label)) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "Number of actors (A)",
+    y = "Coordination need (C)",
+    color = "Simpson-value",
+    caption = "The shows scenarios portraying the relationship between the number of actors and the coordination\n need, given different simpson-values." )+
+  theme_light()+
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  scale_color_manual(values = cartography::carto.pal(pal1 = "blue.pal", n1 = 4))+
+  pub_theme()
+
+scenarios_simpson
+
+ggsave("scenarios_simpson.pdf",
+       width = 7,
+       height = 4)
+
+```
+
+logT:
+
+```{r}
+scenarios_logT <- expand.grid(
+  n_actors = 1:16,
+  total_tasks = c(2, 5, 10, 15, 25 )  
+) %>%
+  mutate(
+    coord_log = (log(n_actors)*log(total_tasks))/(1+log(n_actors)*log(total_tasks)),
+    scenario_label = factor( 
+      paste("T =", total_tasks), 
+      levels = paste("T =", c(2, 5, 10, 15, 25))))
+
+scenarios_logT <- ggplot(scenarios_logT, aes(x = n_actors, 
+                      y = coord_log, 
+                      color = scenario_label)) +
+  geom_line(linewidth = 1) +
+  labs(
+    x = "Number of actors (A)",
+    y = "Coordination need (C)",
+    color = NULL,
+    caption = "Figure B.1 shows scenarios portraying the relationship between the number of actors and the\n coordination need, given different numbers of tasks.") +
+  theme_light() +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  scale_color_manual(values = cartography::carto.pal(pal1 = "blue.pal", n1 = 5))+
+  pub_theme()
+
+scenarios_logT
+
+ggsave("scenarios_logT.pdf",
+       width = 7,
+       height = 4)
+
+```
+
+### Distributions over time
+
+```{r}
+subset_5_years <- data_coord_pol2 %>% 
+  filter(year %in% c(1980, 
+                     1985,
+                     1990, 
+                     1995,
+                     2000, 
+                     2005,
+                     2010, 
+                     2015,
+                     2020))
+
+ggplot(subset_5_years, aes(x = coord_simp)) +
+  geom_density() +
+  facet_wrap(~ year) +
+  theme_minimal()
+```
+
+## Number of actors and tasks per year
+
+```{r}
+data_coord_pol2 <- data_coord_pol2 %>% 
+  mutate(n_actors = as.numeric(n_actors),
+         total_tasks = as.numeric(total_tasks),
+         simpson = as.numeric(simpson))
+
+data_coord <- data_coord_pol2 %>% 
+  group_by(country, year) %>% 
+  summarise(actors_mean = mean(n_actors),
+            tasks_mean = mean(total_tasks),
+            .groups = "drop")
+
+ggplot(data_coord, aes(x=actors_mean, 
+                       y=tasks_mean,
+                       colour = year))+
+  geom_point(position = position_jitter(width = 0.1,
+                                        height = 0.1))+
+  theme_light()
+
+# Scatterplot of the number of actors and tasks with country-colors:
+ggplot(data_coord, aes(x=actors_mean, 
+                       y=tasks_mean,
+                       colour = country))+
+  geom_point(position = position_jitter(width = 0.1,
+                                        height = 0.1))+
+  theme_light()
+```
+
+## Aggregating the index to country-year
+
+```{r}
+
+data_coord2 <- data_coord_pol2 %>% 
+  group_by(country, year) %>% 
+  summarise(coord_simp_mean = mean(coord_simp),
+            coord_log_mean = mean(coord_log),
+            coord_simp_sum = sum(coord_simp),
+            coord_log_sum = sum(coord_log),
+            .groups = "drop")
+
+data_coord <- data_coord %>% 
+  left_join(data_coord2, by= c("country", "year"))
+
+coord_simp_plot <- ggplot(data_coord, aes(x=coord_simp))+
+  geom_histogram()+
+  coord_cartesian(xlim = c(0.25, 0.75))+
+  theme_light()
+
+coord_simp_plot
+
+ggsave(coord_simp_plot, file= "coord_simp_plot.pdf")
+
+```
+
+Log T model:
+
+```{r}
+coord_log_plot <- ggplot(data_coord, aes(x=coord_log))+
+  geom_histogram()+
+  coord_cartesian(xlim = c(0.25, 0.75))+
+  theme_light()
+
+ggsave(coord_log_plot, file= "coord_log_plot.pdf")
+```
+
+## Differentiating the index
+
+```{r}
+
+data_coord <- data_coord %>% 
+  group_by(country) %>% 
+  arrange(year) %>% 
+  mutate(
+    coord_simp_sum_lag = dplyr::lag(coord_simp_sum, 1),
+    coord_simp_sum_diff = coord_simp_sum - coord_simp_sum_lag
+  ) 
+
+
+data_coord <- data_coord %>% 
+  group_by(country) %>% 
+  arrange(year) %>% 
+  mutate(
+    coord_log_sum_lag = dplyr::lag(coord_log_sum, 1),
+    coord_log_sum_diff = coord_log_sum - coord_log_sum_lag
+  ) 
+
+table(data_coord$country)
+```
+
+## Saving the new dataset
+
+```{r}
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/data/")
+save(data_coord, file = "data_coord_cy.Rda")
+```

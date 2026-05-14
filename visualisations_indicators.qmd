@@ -1,0 +1,1145 @@
+---
+title: "Masters thesis visualisations"
+format: pdf
+editor: visual
+---
+
+# Preparation
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(patchwork)
+library(magick)
+library(paletteer)
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/data/")
+load("data_no_actors.Rda")
+load("data_tasks_outsourcing.Rda")
+load("data_coord_cy.Rda")
+load("data_coverage_pp.Rda")
+load("data_coord_pol.Rda")
+
+setwd("/Users/tuva/Documents/Studier/Master/2. semester/STV4424/Term paper/Data/")
+
+```
+
+## Setting colours for the countries
+
+```{r}
+
+# country_colors <- c(
+#   "France" = "#306C94",
+#   "Germany" = "#F39033",
+#   "Denmark" = "lightskyblue",
+#   "Norway" = "#B84423")
+
+country_colors <- c(
+  "France" = "#306C94",
+  "Germany" = "#F39033",
+  "Denmark" = "#6CB4E8",    
+  "Norway" = "#D64545"      
+)
+```
+
+## Creating a theme
+
+```{r}
+
+pub_theme <- function(base_size = 11) {
+  theme_minimal(base_size = base_size) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Frame
+    plot.background = element_rect(
+      fill = "white",
+      colour = "black",
+      linewidth = 0.75
+    ),
+    # Panel
+    panel.background = element_rect(fill = "white", 
+                                    colour = NA),
+    # Axes
+    axis.line = element_line(colour = "black", 
+                             linewidth = 0.5),
+    axis.title = element_text(face = "bold",
+                              size = base_size + 1),
+    axis.text = element_text(size = base_size),
+    
+    # LEGEND 
+    legend.position = "top",
+    legend.direction = "horizontal",
+    legend.background = element_rect(
+      fill = "white",
+      colour = "black",
+      linewidth = 0.5
+    ),
+    legend.title = element_text(face = "bold"),
+    legend.key.size = unit(0.75, "lines"),
+    legend.margin = margin(5, 5, 5, 5),
+    # Caption 
+    plot.caption = element_text(
+      hjust = 0,
+      size = base_size - 1,
+      colour = "gray40"
+    ),
+    # Margin
+    plot.margin = margin(10, 10, 10, 10)
+  )
+}
+```
+
+## Joining the datasets on country-year level
+
+```{r}
+
+data_all_combined <- data_coverage_pp %>% 
+  left_join(data_coord, by = c("country", "year")) %>% 
+  left_join(data_no_actors, by = c("country", "year")) %>% 
+  left_join(data_tasks_outsourcing, by = c("country", "year"))
+
+table(data_all_combined$country)
+```
+
+## Calculating the average across all countries
+
+```{r}
+
+data_all_combined <- data_all_combined %>% 
+  group_by(year) %>% 
+  mutate(average_coverage = mean(coverage_pp),
+         average_actors = mean(no_actors),
+         average_coord = mean(coord_simp_sum),
+         average_outsourcing = mean(outsourcing_index)) %>% 
+  ungroup()
+
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/data/")
+save(data_all_combined,
+     file = "data_all_indicators.Rda")
+
+```
+
+## Fixing times new roman
+
+```{r}
+# install.packages(c("showtext", "systemfonts"))
+library(showtext)
+library(systemfonts)
+
+system_fonts()[grep("Times New Roman", system_fonts()$family, ignore.case = TRUE), ]
+
+# /System/Library/Fonts/Supplemental/Times New R
+
+font_add(
+  family  = "Times New Roman",
+  regular = "/System/Library/Fonts/Supplemental/Times New Roman.ttf"
+)
+
+showtext_auto()
+```
+
+# Visualising policy growth
+
+## Visualising nominal growth
+
+```{r}
+coverage_over_time_caption <- ggplot()+
+  geom_line(
+    data = data_all_combined,
+    aes(x = year, 
+        y = coverage_pp,
+        colour = country),
+    size = 1 ) +
+  geom_line(
+    data = data_all_combined,
+    aes(
+      x = year,
+      y = average_coverage,
+      linetype = "Average"),
+    colour = "darkgrey",
+    size = 1)+
+  scale_color_manual(values = country_colors)+
+  pub_theme()+
+  labs(x = "Years",
+       y = "% coverage",
+       caption = "Figure C.1 shows how policy accumulation, measured as the percentage coverage of the portfolio\n space, varies by country, over time.",
+       colour = NULL,
+       linetype = NULL)+
+  scale_linetype_manual(
+    values = c("Average" = "dashed"), 
+    labels = "Average")
+
+coverage_over_time_caption
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave(coverage_over_time_caption,
+       file = "coverage_over_time.pdf",
+       height = 4,
+       width = 7)
+```
+
+## Visualising differentiated growth
+
+```{r}
+coverage_diff <- ggplot(data_all_combined,
+                             aes(x = year,
+                                 y = coverage_diff,
+                                 colour = country))+
+  geom_line(size = 0.8)+
+  scale_color_manual(values = country_colors)+
+  theme_light(base_family = "Times New Roman")+
+  scale_y_continuous(breaks = seq(-1,6,1))+
+  scale_x_continuous(breaks = seq(1980,2020,5))+
+  pub_theme()+
+  labs(x = "Years",
+       y = "% Coverage",
+       caption = "Figure x shows how policy accumulation, measured as growth in the percentage\n coverage of the portfolio space, varies by country, over time.",
+       colour = NULL)
+
+coverage_diff
+
+ggsave(coverage_diff,
+       file = "coverage_diff.pdf",
+       height = 3,
+       width = 6)
+```
+
+# Correlations with policy growth
+
+## With numbers of actors
+
+```{r}
+
+corr_coverage_actors <- ggplot(data_all_combined,
+                              aes(x = coverage_pp,
+                                  y = no_actors,
+                                  color = country))+
+  geom_point(size = 2,
+             position = position_jitter(width = 1.5,
+                                        height = 1.5),
+             alpha = 0.9)+
+  scale_color_manual(values = country_colors)+
+  scale_y_continuous(limits = c(0,70),
+                     breaks = seq(0,70,10))+
+  theme_light()+
+  pub_theme()+
+  labs(
+    x = "Coverage rate (%)",
+    y = "Number of actors",
+    caption = "The figure shows the correlation between the number of actors per country-year and the coverate rate\n of the portfolio space. ",
+    colour = NULL
+  )
+
+corr_coverage_actors
+
+ggsave(corr_coverage_actors,
+       file = "corr_coverage_actors.pdf",
+       height = 4,
+       width = 7)
+```
+
+## With outsourcing
+
+```{r}
+corr_coverage_outsourcing <- ggplot(data_all_combined,
+                              aes(x = coverage_pp,
+                                  y = outsourcing_index,
+                                  color = country))+
+  geom_point(size = 2,
+             position = position_jitter(width = 1.5,
+                                        height = 1.5),
+             alpha = 0.9)+
+  scale_color_manual(values = country_colors)+
+  theme_light()+
+  pub_theme()+
+  labs(
+    x = "Coverage rate (%)",
+    y = "Outsourcing (no of tasks)",
+    caption = "The figure shows the correlation between the number of tasks performed by private sector actors per\n country-year and the coverate rate of the portfolio space. ",
+    colour = NULL)+
+  scale_y_continuous(breaks = seq(0,150,20))
+
+corr_coverage_outsourcing
+
+ggsave(corr_coverage_outsourcing,
+       file = "corr_coverage_outsourcing.pdf",
+       height = 4,
+       width = 7)
+```
+
+## with coordination
+
+```{r}
+corr_coverage_coord <- ggplot(data_all_combined,
+                              aes(x = coverage_pp,
+                                  y = coord_simp_sum,
+                                  color = country))+
+  geom_point(size = 2,
+             position = position_jitter(width = 1.5,
+                                        height = 1.5),
+             alpha = 0.9)+
+  scale_color_manual(values = country_colors)+
+  theme_light()+
+  pub_theme()+
+  labs(
+    x = "Coverage rate (%)",
+    y = "Coordination need",
+    caption = "The figure shows the correlation between the sum of the coordination need per country-year, and the\n coverate rate of the portfolio space. ",
+    colour = NULL
+  )+
+  scale_y_continuous(breaks = seq(0,150,20))
+
+corr_coverage_coord
+
+ggsave(corr_coverage_coord,
+       file = "corr_coverage_coord.pdf",
+       height = 4,
+       width = 7)
+```
+
+# Tasks per actor
+
+```{r}
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/data/")
+load("data_combined.Rda")
+
+SUPA_colors <- c("#2A5783",
+                 "lightblue4",
+                 "lightskyblue3",
+                 "slategray1", 
+                 "#8B8378",
+                 "snow3")
+
+tasks_per_actor <- data_combined %>% 
+  group_by(country, actor, task, year) %>% 
+  summarise(n_tasks = sum(cum_count),
+            .groups = "drop")
+
+totals_2024 <- tasks_per_actor %>% 
+  filter(year == 2024) %>% 
+  group_by(country, actor) %>% 
+  summarise(total_tasks_2024 = sum(n_tasks),
+            .groups = "drop")
+
+tasks_per_actor <- tasks_per_actor %>% 
+  left_join(totals_2024, by = c("country", "actor"))
+
+```
+
+## Norway
+
+```{r}
+
+tasks_per_actor_NOR <- tasks_per_actor %>%
+  filter(year %in% c(1990, 2024),
+         country %in% c("Norway"))
+
+tasks_actor_NOR <- ggplot(tasks_per_actor_NOR, 
+                      aes(x = reorder(actor,-total_tasks_2024), 
+                          y = n_tasks)) +  
+  geom_col(aes(fill = task)) +
+  scale_fill_manual(values = SUPA_colors,
+                    labels = c(
+      administrative_decision_making = "Administrative Decision-Making",
+      delivery_of_im_material_goods_and_services = "Delivery of Goods and Services",
+      monitoring_reporting = "Monitoring & Reporting",
+      inspection = "Inspections",
+      supervision = "Supervision",
+      planning_participation_evaluation = "Planning, Participation & Evaluation"
+    ),
+    name = "Types of tasks"   
+  )+
+  labs(x = "Actors",
+       y = "Number of tasks",
+       caption = "The figure shows the distribution of tasks per actor in Norway in 1990 and 2024.",
+       colour = NULL)+
+  scale_y_continuous(limits = c(0, 110),
+                     breaks = seq(0,110, by = 20))+
+  theme_light()+
+  pub_theme()+
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1))+
+  guides(
+    fill = guide_legend(
+      nrow  = 2,        # to rader
+      byrow = TRUE,
+      title = "Types of tasks"))+
+  facet_wrap(~ year)
+
+tasks_actor_NOR
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave("tasks_actor_NOR.pdf",
+       plot = tasks_actor_NOR,
+       height = 7,
+       width = 10)
+
+
+
+```
+
+## Denmark
+
+```{r}
+tasks_per_actor_DK <- tasks_per_actor %>%
+  filter(year %in% c(1990, 2024),
+         country %in% c("Denmark"))
+
+tasks_actor_DK <- ggplot(tasks_per_actor_DK, 
+                      aes(x = reorder(actor,-total_tasks_2024), 
+                          y = n_tasks)) +  
+  geom_col(aes(fill = task)) +
+  scale_fill_manual(values = SUPA_colors,
+                    labels = c(
+      administrative_decision_making = "Administrative Decision-Making",
+      delivery_of_im_material_goods_and_services = "Delivery of Goods and Services",
+      monitoring_reporting = "Monitoring & Reporting",
+      inspection = "Inspections",
+      supervision = "Supervision",
+      planning_participation_evaluation = "Planning, Participation & Evaluation"
+    ),
+    name = "Types of tasks"   
+  )+
+  labs(x = "Actors",
+       y = "Number of tasks",
+       caption = "The figure shows the distribution of tasks per actor in Denmark in 1990 and 2024.",
+       colour = NULL)+
+  scale_y_continuous(limits = c(0, 320),
+                     breaks = seq(0,320, by = 20))+
+  theme_light()+
+  pub_theme()+
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1))+
+  guides(
+    fill = guide_legend(
+      nrow  = 2,        
+      byrow = TRUE,
+      title = "Types of tasks"))+
+  facet_wrap(~ year)
+
+tasks_actor_DK
+
+ggsave("tasks_actors_DK.pdf",
+       plot = tasks_actor_DK,
+       height = 8,
+       width = 10)
+```
+
+## Germany
+
+```{r}
+tasks_per_actor_GER <- tasks_per_actor %>%
+  filter(year %in% c(1990, 2024),
+         country %in% c("Germany"))
+
+tasks_actor_GER <- ggplot(tasks_per_actor_GER, 
+                      aes(x = reorder(actor,-total_tasks_2024), 
+                          y = n_tasks)) +  
+  geom_col(aes(fill = task)) +
+  scale_fill_manual(values = SUPA_colors,
+                    labels = c(
+      administrative_decision_making = "Administrative Decision-Making",
+      delivery_of_im_material_goods_and_services = "Delivery of Goods and Services",
+      monitoring_reporting = "Monitoring & Reporting",
+      inspection = "Inspections",
+      planning_participation_evaluation = "Planning, Participation & Evaluation"
+    ),
+    name = "Types of tasks"   
+  )+
+  labs(x = "Actors",
+       y = "Number of tasks",
+       caption = "The figure shows the distribution of tasks per actor in Germany in 1990 and 2024.",
+      colour  = NULL)+
+  scale_y_continuous(limits = c(0, 210),
+                     breaks = seq(0,210, by = 50))+
+  theme_light()+
+  pub_theme()+
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1))+
+  facet_wrap(~ year)
+
+tasks_actor_GER
+
+ggsave("tasks_actor_GER.pdf",
+       plot = tasks_actor_GER,
+       height = 14,
+       width = 14)
+```
+
+## France
+
+```{r}
+
+tasks_per_actor_FR <- tasks_per_actor %>%
+  filter(year %in% c(1990, 2024),
+         country %in% c("France"))
+
+tasks_actor_FR <- ggplot(tasks_per_actor_FR, 
+                      aes(x = reorder(actor,-total_tasks_2024), 
+                          y = n_tasks)) +  
+  geom_col(aes(fill = task)) +
+  scale_fill_manual(values = SUPA_colors,
+                    labels = c(
+      administrative_decision_making = "Administrative Decision-Making",
+      delivery_of_im_material_goods_and_services = "Delivery of Goods and Services",
+      monitoring_reporting = "Monitoring & Reporting",
+      inspection = "Inspections",
+      supervision = "Supervision",
+      planning_participation_evaluation = "Planning, Participation & Evaluation"
+    ),
+    name = "Types of tasks"   
+  )+
+  labs(x = "Actors",
+       y = "Number of tasks",
+       caption = "The figure shows the distribution of tasks per actor in France in 1990 and 2024.",
+       colour = NULL)+
+  scale_y_continuous(limits = c(0, 190),
+                     breaks = seq(0,190, by = 20))+
+  theme_light()+
+  pub_theme()+
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1))+
+  guides(
+    fill = guide_legend(
+      nrow  = 2,       
+      byrow = TRUE,
+      title = "Types of tasks"))+
+  facet_wrap(~ year)
+
+tasks_actor_FR
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave("tasks_actor_FR.pdf",
+       plot = tasks_actor_FR,
+       height = 13,
+       width = 20)
+
+
+```
+
+# Visualising the numbers of actors
+
+## Distributions of the number of actors
+
+```{r}
+
+histogram_no_actors <- ggplot(data_all_combined, aes(x = no_actors))+
+  geom_histogram(binwidth=3, 
+                 fill= "#2A5783",
+                 color="#2A5783", 
+                 alpha=0.9)+
+  theme_light()+
+  labs(x = "Numbers of actors",
+       y = "Frequency",
+       caption = "Figure x shows the frequency of observations (country-years) of the number of actors \ninvolved in the implementation structures.")+
+  scale_x_continuous(breaks = seq(0,100,5))+
+  theme_light()+
+  pub_theme()
+
+histogram_no_actors
+
+
+histogram_no_actors_diff <- ggplot(data_all_combined, aes(x = no_actors_diff))+
+  geom_histogram(fill= "#2A5783",
+                 color="#2A5783", 
+                 alpha=0.9)+
+  theme_light()+
+  labs(x = "Growth in the number of actors",
+       y = "Frequency",
+       caption = "Figure D.1 shows the frequency of observations (country-years) of the\n growth in number of actors involved in the implementation structures.")+
+ scale_x_continuous(breaks = seq(-3,13,1))+
+  theme_light()+
+  pub_theme()
+
+histogram_no_actors_diff
+
+ggsave(histogram_no_actors_diff, 
+       file = "histogram_no_actors_diff.pdf",
+       height = 4,
+       width = 5)
+
+```
+
+## Line graph with nominal count
+
+```{r}
+
+cumulative_no_actors <- ggplot() +
+  geom_line(
+    data = data_all_combined,
+    aes(x = year, 
+        y = no_actors,
+        colour = country),
+    size = 1 ) +
+  geom_line(
+    data = data_all_combined,
+    aes(
+      x = year,
+      y = average_actors,
+      linetype = "Average"),
+    colour = "darkgrey",
+    size = 1) +
+  theme_light(base_family = "Times New Roman") +
+  labs(
+    x = "Year",
+    y = "Number of actors",
+    colour   = NULL,
+    linetype = NULL,
+    caption = "The figure shows the cumulative count of the unique number of actors involved in the implementation\n structures, over time."
+  ) +
+  scale_x_continuous(breaks = seq(1980, 2020, 5)) +
+  scale_y_continuous(breaks = seq(0, 70, 10)) +
+  theme_light()+
+  pub_theme()+
+  scale_color_manual(values = country_colors) +
+  scale_linetype_manual(
+    values = c("Average" = "dashed"), 
+    labels = "Average")
+
+cumulative_no_actors
+
+ggsave(cumulative_no_actors, 
+       file = "cumulative_no_actors.pdf",
+       width = 7,
+       height = 4)
+
+```
+
+## Line graph with differentiated growth
+
+```{r}
+scatterplot_no_actors_diff <- ggplot(data_all_combined, 
+                                aes(x = year, 
+                                    y = no_actors_diff,
+                                    colour = country))+
+  geom_line(size = 1)+
+  labs(x = "Year",
+       y = "Number of actors (growth)",
+       caption = "The figure shows how the number of actors changes from year to year.",
+       colour = NULL)+
+  scale_x_continuous(breaks = seq(1980,2020,5))+
+  scale_color_manual(values = country_colors)+
+  theme_light()+
+  pub_theme()
+
+scatterplot_no_actors_diff
+
+ggsave(scatterplot_no_actors_diff, 
+       file = "timeline_no_actors_diff.pdf",
+       height = 3,
+       width = 6)
+```
+
+## Line graph with average number of actors per policy
+
+```{r}
+
+line_graph_average_actors <- ggplot(data_all_combined, 
+                                aes(x = year, 
+                                    y = mean_actors,
+                                    colour = country))+
+  geom_line(size = 1)+
+  labs(x = "Year",
+       y = "No of actors (average)",
+       caption = "The figure shows the average number of actors per policy over time, in each country.",
+       colour = NULL)+
+  scale_x_continuous(breaks = seq(1980,2020,5))+
+  scale_y_continuous(limits = c(0,5))+
+ theme_light()+
+  pub_theme()+
+  scale_color_manual(values = country_colors)
+
+line_graph_average_actors
+
+ggsave(line_graph_average_actors, 
+       file = "line_graph_average_actors.pdf",
+       width = 7,
+       height = 4)
+```
+
+# Visualising outsourcing
+
+## Visualising the distribution
+
+```{r}
+histogram_outsourcing_diff <- ggplot(data_all_combined, 
+                                   aes(x = outsourcing_nom_diff))+
+  geom_histogram(fill= "#2A5783",
+                 color="#2A5783", 
+                 alpha=0.9)+
+  theme_light()+
+  labs(x = "Growth in outsourcing",
+       y = "Frequency",
+       caption = "Figure D.2 shows the frequency of observations (country-years) of the\n growth in outsourcing involved in the implementation structures.")+
+ scale_x_continuous(breaks = seq(-3,13,1))+
+  theme_light()+
+  pub_theme()
+
+histogram_outsourcing_diff
+
+ggsave(histogram_outsourcing_diff, 
+       file = "histogram_outsourcing_diff.pdf",
+       height = 4,
+       width = 5)
+
+```
+
+## Visualising the bivariate plots
+
+### Nominal change in the number of tasks
+
+```{r}
+
+linegraph_outsourcing_caption <- ggplot() +
+  geom_line(
+    data = data_all_combined,
+    aes(x = year, 
+        y = outsourcing_index,
+        colour = country),
+    size = 1 ) +
+  geom_line(
+    data = data_all_combined,
+    aes(
+      x = year,
+      y = average_outsourcing,
+      linetype = "Average"),
+    colour = "darkgrey",
+    size = 1) +
+  theme_light(base_family = "Times New Roman") +
+  labs(
+    x = "Year",
+    y = "Outsourcing (no of tasks)",
+    colour   = NULL,
+    linetype = NULL,
+    caption = "The figure shows how the level of outsourcing, measured as the number of tasks performed by private\n sector actors, varies by country, over time."
+  ) +
+  scale_x_continuous(breaks = seq(1980, 2020, 5)) +
+  scale_y_continuous(breaks = seq(0,140, 20)) +
+  theme_light()+
+  pub_theme() +
+  scale_color_manual(values = country_colors) +
+  scale_linetype_manual(
+    values = c("Average" = "dashed"))
+
+linegraph_outsourcing_caption
+
+ggsave(linegraph_outsourcing_caption,
+       file = "nominal_outsourcing_timeline.pdf",
+       height = 4,
+       width = 7)
+```
+
+### Percentage change in the number of tasks
+
+```{r}
+percentage_outsourcing_timeline <- ggplot(data_all_combined, 
+                                 aes(x = year,
+                                  y = outsourcing_pp,
+                                  colour = country))+
+  geom_line(size = 0.8)+
+  scale_y_continuous(limits = c(0,15),
+                     breaks = seq(0,15,2))+
+  scale_x_continuous(breaks = seq(1980,2020,5))+ 
+  theme_light()+
+  pub_theme()+
+  labs(x = "Years",
+     y = "Outsourcing (% of total tasks)",
+     caption = "The figure shows how the level of outsourcing, measured as the percentage of tasks performed by\n private sector actors compared to the total number of tasks, varies by country, over time.",
+     colour = NULL)+
+  scale_color_manual(values = country_colors)
+
+percentage_outsourcing_timeline
+
+ggsave(percentage_outsourcing_timeline,
+       file = "percentage_outsourcing_timeline.pdf",
+       height = 4,
+       width = 7)
+
+```
+
+## Nominal differentiated outsourcing
+
+```{r}
+outsourcing_diff_timeline <- ggplot(data_all_combined, 
+                             aes(x = year,
+                                  y = outsourcing_nom_diff,
+                                  colour = country))+
+  geom_line(size = 0.8)+
+  labs(x = "Years",
+       y = "Outsourcing (growth)",
+       caption = "The figure shows how the level of outsourcing, measured as the number of tasks\n performed by private actors, changes from year to year.",
+       colour = NULL)+
+  scale_color_manual(values = country_colors)+
+  scale_y_continuous(breaks = seq(-6,6,2))+
+  scale_x_continuous(breaks = seq(1980,2020,5))+
+  theme_light()+
+  pub_theme()
+
+outsourcing_diff_timeline
+
+ggsave(outsourcing_diff_timeline,
+       file = "outsourcing_diff_timeline.pdf",
+       height = 3,
+       width = 6)
+```
+
+# Visualising coordination
+
+## Histograms of the indexes
+
+```{r}
+histogram_coord_diff <- ggplot(data_all_combined, 
+                                   aes(x = coord_simp_sum_diff))+
+  geom_histogram(fill= "#2A5783",
+                 color="#2A5783", 
+                 alpha=0.9)+
+  theme_light()+
+  labs(x = "Growth in coordination need",
+       y = "Frequency",
+       caption = "Figure D.3 shows the frequency of observations (country-years) of the\n growth in coordination need in the implementation structures.")+
+ scale_x_continuous(breaks = seq(-3,13,1))+
+  theme_light()+
+  pub_theme()
+
+histogram_coord_diff
+
+ggsave(histogram_coord_diff, 
+       file = "histogram_coord_diff.pdf",
+       height = 4,
+       width = 5)
+```
+
+## Coordination sum timeline
+
+```{r}
+
+coord_accumulated_timeline <- ggplot() +
+  geom_line(
+    data = data_all_combined,
+    aes(x = year, 
+        y = coord_simp_sum,
+        colour = country),
+    size = 1 ) +
+  geom_line(
+    data = data_all_combined,
+    aes(
+      x = year,
+      y = average_coord,
+      linetype = "Average"),
+    colour = "darkgrey",
+    size = 1) +
+  labs(
+    x = "Year",
+    y = "Coordination need",
+    colour   = NULL,
+    linetype = NULL,
+    caption = "The figure shows the growth in the sum of the coordination need per country-year over time. The\n average coordination sum across the countries is shown in the dashed grey line."
+  ) +
+  scale_x_continuous(breaks = seq(1980, 2020, 5)) +
+  scale_y_continuous(breaks = seq(0, 130, 20)) +
+  theme_light()+
+  pub_theme()+
+  scale_color_manual(values = country_colors) +
+  scale_linetype_manual(
+    values = c("Average" = "dashed"))
+
+coord_accumulated_timeline
+
+ggsave(coord_accumulated_timeline, 
+       file = "coord_accumulated_timeline.pdf",
+       height = 4,
+       width = 7)
+```
+
+## Coordination need mean timeline
+
+```{r}
+
+coord_mean_timeline <- ggplot(data_all_combined, 
+                                      aes(x=year, 
+                                          y=coord_simp_mean,
+                       colour = country))+
+  geom_line(size = 0.8)+
+  scale_color_manual(values = country_colors)+
+  labs(
+    x= "Year",
+    y= "Coordination (average)",
+    caption = "The figure shows the changes in the average coordination need in each country-year.",
+  colour = NULL)+
+  scale_x_continuous(breaks = seq(1980,2020,5))+
+  scale_y_continuous(limits = c(0,1),
+                     breaks = seq(0,1,0.2))+
+  theme_light()+
+  pub_theme()
+
+coord_mean_timeline
+
+ggsave(coord_mean_timeline, 
+       file = "coord_mean_timeline.pdf",
+       height = 4,
+       width = 7)
+
+```
+
+## Distribution of coordination on policy level
+
+```{r}
+#| message: FALSE
+
+subset_5_years <- data_coord_pol2 %>% 
+  filter(year %in% c(1980, 
+                     1985,
+                     1990, 
+                     1995,
+                     2000, 
+                     2005,
+                     2010, 
+                     2015,
+                     2020))
+
+distributions_average_coordination <- ggplot(subset_5_years, 
+                                             aes(x = coord_simp)) +
+  geom_density() +
+  facet_wrap(~ year) +
+  theme_light()+
+  labs(x = "Coordination need (per policy)",
+       caption = "The figure shows how the distributions of the coordination need on the policy level has\n evolved in the time period.")+
+  pub_theme()
+
+distributions_average_coordination
+
+ggsave(distributions_average_coordination, 
+       file = "distributions_average_coordination.pdf",
+       width = 6,
+       height = 4)
+
+```
+
+## Coordination need type of change
+
+```{r}
+scatterplot_coord_timeline_diff <- ggplot(data_all_combined, 
+                                      aes(x=year, 
+                                          y=coord_simp_sum_diff,
+                       colour = country))+
+  geom_line(size = 1)+
+  theme_light(base_family = "Times New Roman")+
+  scale_color_manual(values = country_colors)+
+  labs(
+    x= "Year",
+    y= "Coordination (growth)",
+    caption = "The figure shows how the coordination need changes from year to year."
+  ,
+  colour = NULL)+
+  theme_light()+
+pub_theme()
+  
+scatterplot_coord_timeline_diff  
+
+ggsave(scatterplot_coord_timeline_diff, 
+       file = "coord_timeline_diff.pdf",
+       width = 6,
+       height = 3)
+```
+
+# Robustness check coordination
+
+## Cumulative measure
+
+```{r}
+
+coord_log_accumulated_timeline <- ggplot() +
+  geom_line(
+    data = data_all_combined,
+    aes(x = year, 
+        y = coord_log_sum,
+        colour = country),
+    size = 1 ) +
+  geom_line(
+    data = data_all_combined,
+    aes(
+      x = year,
+      y = average_coord,
+      linetype = "Average"),
+    colour = "darkgrey",
+    size = 1) +
+  theme_light(base_family = "Times New Roman") +
+  labs(
+    x = "Year",
+    y = "Coordination need (cumulative)",
+    colour   = NULL,
+    linetype = NULL,
+    caption = "Figure B.2 shows the growth in the sum of the coordination need per country-year over time. The average \ncoordination sum across the countries is shown in the dashed grey line."
+  ) +
+  scale_x_continuous(breaks = seq(1980, 2020, 5)) +
+  scale_y_continuous(breaks = seq(0, 130, 20)) +
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        plot.caption = element_text(hjust = 0,
+                                    size = 10),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "top")+
+  scale_color_manual(values = country_colors) +
+  scale_linetype_manual(
+    values = c("Average" = "dashed"))
+
+coord_log_accumulated_timeline
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave(coord_log_accumulated_timeline, 
+       file = "coord_log_accumulated_timeline.pdf",
+       height = 4,
+       width = 7)
+
+
+```
+
+## Average measure
+
+```{r}
+coord_log_mean_timeline <- ggplot(data_all_combined, 
+                                      aes(x=year, 
+                                          y=coord_log_mean,
+                       colour = country))+
+  geom_line(size = 0.8)+
+  theme_light(base_family = "Times New Roman")+
+  scale_color_manual(values = country_colors)+
+  labs(
+    x= "Year",
+    y= "Coordination (mean)",
+    caption = "Figure B.3 shows the changes in the average coordination need in each country-year.",
+  colour = NULL)+
+  scale_x_continuous(breaks = seq(1980,2020,5))+
+  scale_y_continuous(limits = c(0,1),
+                     breaks = seq(0,1,0.2))+
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        plot.caption = element_text(hjust = 0,
+                                    size = 10),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "top")
+
+coord_log_mean_timeline
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave(coord_log_mean_timeline, 
+       file = "coord_log_mean_timeline.pdf",
+       height = 4,
+       width = 7)
+```
+
+## Distributions
+
+```{r}
+
+subset_5_years <- data_coord_pol2 %>% 
+  filter(year %in% c(1980, 
+                     1985,
+                     1990, 
+                     1995,
+                     2000, 
+                     2005,
+                     2010, 
+                     2015,
+                     2020))
+
+distributions_log_average_coordination <- ggplot(subset_5_years, 
+                                             aes(x = coord_log)) +
+  geom_density() +
+  facet_wrap(~ year) +
+  theme_minimal()+
+  labs(y = "Year", 
+       x = "Coordination need (per policy)",
+       caption = "Figure B.4 shows how the distributions of the coordination need on the policy level has evolved in the time period.")+
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        plot.caption = element_text(hjust = 0))
+
+distributions_log_average_coordination
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave(distributions_log_average_coordination, 
+       file = "distributions_log_average_coordination.pdf",
+       width = 8,
+       height = 6)
+```
+
+## Correlation with policy accumulation
+
+```{r}
+corr_log_coverage_coord <- ggplot(data_all_combined,
+                              aes(x = coverage_pp,
+                                  y = coord_log_sum,
+                                  color = country))+
+  geom_point(size = 2,
+             position = position_jitter(width = 1.5,
+                                        height = 1.5),
+             alpha = 0.9)+
+  scale_color_manual(values = country_colors)+
+  theme_light(base_family = "Times New Roman")+
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        plot.caption = element_text(hjust = 0,
+                                    size = 10),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "top")+
+  labs(
+    x = "Coverage rate (%)",
+    y = "Coordination need (cumulative)",
+    caption = "Figure B.5 shows the correlation between the sum of the coordination need per country-year, and the coverate rate \nof the portfolio space. ",
+    colour = NULL
+  )+
+  scale_y_continuous(breaks = seq(0,150,20))
+
+corr_log_coverage_coord
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave(corr_log_coverage_coord,
+       file = "corr_log_coverage_coord.pdf",
+       height = 4,
+       width = 7)
+```
+
+## Type of change
+
+```{r}
+
+scatterplot_coord_timeline_diff <- ggplot(data_all_combined, 
+                                      aes(x=year, 
+                                          y=coord_simp_sum_diff,
+                       colour = country))+
+  geom_line(size = 1)+
+  theme_light(base_family = "Times New Roman")+
+  scale_color_manual(values = country_colors)+
+  labs(
+    x= "Year",
+    y= "Coordination (growth)",
+    caption = "Figure B.6 shows the changes in the coordination growth for each country over time, using the \ncoordination indicator calculated with the simpson-index."
+  )+
+  scale_x_continuous(breaks = seq(1980,2020,5))+
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        plot.caption = element_text(hjust = 0,
+                                    size = 10),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "top")
+  
+scatterplot_coord_timeline_diff  
+
+setwd("/Users/tuva/Documents/Studier/Master/Masteroppgave/r-coding/plots/")
+ggsave(scatterplot_coord_timeline_diff, 
+       file = "coord_timeline_diff.pdf",
+       width = 6,
+       height = 3)
+
+```
+
+\
